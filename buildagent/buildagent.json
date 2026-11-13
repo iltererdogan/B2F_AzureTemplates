@@ -1,0 +1,252 @@
+{
+    "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+    "contentVersion": "1.0.0.0",
+    "metadata": {
+        "description": "Windows Server 2022 build agent for Azure DevOps with Docker (process isolation), BcContainerHelper, Claude Code and the standard build tools. See buildagent/README.md."
+    },
+    "parameters": {
+        "vmName": {
+            "type": "string",
+            "minLength": 3,
+            "maxLength": 15,
+            "metadata": { "description": "Name of the VM. Also used as the computer name, the DNS label of the public IP and the prefix of the agent names." }
+        },
+        "vmSize": {
+            "type": "string",
+            "defaultValue": "Standard_E8as_v5",
+            "allowedValues": [
+                "Standard_D8as_v5", "Standard_D16as_v5",
+                "Standard_E8as_v5", "Standard_E16as_v5",
+                "Standard_D8s_v5", "Standard_D16s_v5",
+                "Standard_E8s_v5", "Standard_E16s_v5"
+            ],
+            "metadata": { "description": "VM size. Each Business Central container needs about 16 GB, so two parallel agents need 64 GB (E8as_v5) to run comfortably." }
+        },
+        "osDiskSizeGB": {
+            "type": "int",
+            "defaultValue": 256,
+            "minValue": 128,
+            "maxValue": 2048,
+            "metadata": { "description": "OS disk size in GB. Docker images and the artifact cache live on this disk." }
+        },
+        "osDiskType": {
+            "type": "string",
+            "defaultValue": "Premium_LRS",
+            "allowedValues": [ "Premium_LRS", "StandardSSD_LRS" ],
+            "metadata": { "description": "OS disk type. Premium SSD is strongly recommended for build speed." }
+        },
+        "useHybridBenefit": {
+            "type": "bool",
+            "defaultValue": true,
+            "metadata": { "description": "Use Azure Hybrid Benefit. Requires Windows Server licenses with Software Assurance or subscription licenses." }
+        },
+        "adminUsername": {
+            "type": "string",
+            "defaultValue": "vmadmin",
+            "metadata": { "description": "Administrator user name of the VM." }
+        },
+        "adminPassword": {
+            "type": "securestring",
+            "metadata": { "description": "Administrator password of the VM." }
+        },
+        "remoteDesktopAccess": {
+            "type": "string",
+            "defaultValue": "-",
+            "metadata": { "description": "IP addresses or CIDR ranges allowed to connect with RDP, separated by commas. Use - (minus) to open no RDP port (use Bastion or JIT instead)." }
+        },
+        "organization": {
+            "type": "string",
+            "metadata": { "description": "Azure DevOps organization URL, e.g. https://dev.azure.com/your-organization" }
+        },
+        "pool": {
+            "type": "string",
+            "metadata": { "description": "Name of the Azure DevOps agent pool the agents join." }
+        },
+        "token": {
+            "type": "securestring",
+            "metadata": { "description": "Azure DevOps personal access token with the scope Agent Pools (Read & manage). Used only during setup and deleted from the VM afterwards." }
+        },
+        "agentCount": {
+            "type": "int",
+            "defaultValue": 2,
+            "minValue": 1,
+            "maxValue": 8,
+            "metadata": { "description": "Number of agents on the VM, i.e. how many pipelines it runs in parallel." }
+        },
+        "agentUrl": {
+            "type": "string",
+            "defaultValue": "",
+            "metadata": { "description": "Optional. URL of the agent zip. Leave empty to download the latest Windows x64 agent offered by the organization." }
+        },
+        "scriptsBaseUrl": {
+            "type": "string",
+            "defaultValue": "https://raw.githubusercontent.com/iltererdogan/B2F_AzureTemplates/buildagent-v1/",
+            "metadata": { "description": "Base URL the setup scripts are downloaded from, ending with /. Points to a release tag so a deployment never picks up unfinished changes." }
+        }
+    },
+    "variables": {
+        "vmName": "[trim(parameters('vmName'))]",
+        "computerName": "[toLower(variables('vmName'))]",
+        "publicIPAddressName": "[concat(variables('vmName'), '-pip')]",
+        "nicName": "[concat(variables('vmName'), '-nic')]",
+        "osDiskName": "[concat(variables('vmName'), '-osdisk')]",
+        "networkSecurityGroupName": "[concat(variables('vmName'), '-nsg')]",
+        "virtualNetworkName": "[concat(variables('vmName'), '-vnet')]",
+        "subnetName": "default",
+        "rdpRule": {
+            "name": "AllowRdp",
+            "properties": {
+                "description": "Remote Desktop",
+                "protocol": "Tcp",
+                "sourcePortRange": "*",
+                "destinationPortRange": "3389",
+                "sourceAddressPrefixes": "[split(replace(parameters('remoteDesktopAccess'), ' ', ''), ',')]",
+                "destinationAddressPrefix": "*",
+                "access": "Allow",
+                "priority": 100,
+                "direction": "Inbound"
+            }
+        },
+        "securityRules": "[if(equals(trim(parameters('remoteDesktopAccess')), '-'), createArray(), createArray(variables('rdpRule')))]",
+        "initScriptUrl": "[concat(parameters('scriptsBaseUrl'), 'buildagent/initbuildagent.ps1')]",
+        "initCommand": "[concat('powershell.exe -NoProfile -ExecutionPolicy Unrestricted -File initbuildagent.ps1', ' -ScriptsBaseUrl \"', parameters('scriptsBaseUrl'), '\"', ' -Organization \"', parameters('organization'), '\"', ' -Pool \"', parameters('pool'), '\"', ' -Token \"', parameters('token'), '\"', ' -AgentCount ', string(parameters('agentCount')), ' -AgentUrl \"', parameters('agentUrl'), '\"', ' -VmName \"', variables('computerName'), '\"')]"
+    },
+    "resources": [
+        {
+            "type": "Microsoft.Network/networkSecurityGroups",
+            "apiVersion": "2023-04-01",
+            "name": "[variables('networkSecurityGroupName')]",
+            "location": "[resourceGroup().location]",
+            "properties": {
+                "securityRules": "[variables('securityRules')]"
+            }
+        },
+        {
+            "type": "Microsoft.Network/virtualNetworks",
+            "apiVersion": "2023-04-01",
+            "name": "[variables('virtualNetworkName')]",
+            "location": "[resourceGroup().location]",
+            "dependsOn": [
+                "[resourceId('Microsoft.Network/networkSecurityGroups', variables('networkSecurityGroupName'))]"
+            ],
+            "properties": {
+                "addressSpace": { "addressPrefixes": [ "10.0.0.0/16" ] },
+                "subnets": [
+                    {
+                        "name": "[variables('subnetName')]",
+                        "properties": {
+                            "addressPrefix": "10.0.0.0/24",
+                            "networkSecurityGroup": {
+                                "id": "[resourceId('Microsoft.Network/networkSecurityGroups', variables('networkSecurityGroupName'))]"
+                            }
+                        }
+                    }
+                ]
+            }
+        },
+        {
+            "type": "Microsoft.Network/publicIPAddresses",
+            "apiVersion": "2023-04-01",
+            "name": "[variables('publicIPAddressName')]",
+            "location": "[resourceGroup().location]",
+            "sku": { "name": "Standard", "tier": "Regional" },
+            "properties": {
+                "publicIPAddressVersion": "IPv4",
+                "publicIPAllocationMethod": "Static",
+                "dnsSettings": { "domainNameLabel": "[variables('computerName')]" }
+            }
+        },
+        {
+            "type": "Microsoft.Network/networkInterfaces",
+            "apiVersion": "2023-04-01",
+            "name": "[variables('nicName')]",
+            "location": "[resourceGroup().location]",
+            "dependsOn": [
+                "[resourceId('Microsoft.Network/publicIPAddresses', variables('publicIPAddressName'))]",
+                "[resourceId('Microsoft.Network/virtualNetworks', variables('virtualNetworkName'))]"
+            ],
+            "properties": {
+                "ipConfigurations": [
+                    {
+                        "name": "ipconfig1",
+                        "properties": {
+                            "privateIPAllocationMethod": "Dynamic",
+                            "publicIPAddress": {
+                                "id": "[resourceId('Microsoft.Network/publicIPAddresses', variables('publicIPAddressName'))]"
+                            },
+                            "subnet": {
+                                "id": "[resourceId('Microsoft.Network/virtualNetworks/subnets', variables('virtualNetworkName'), variables('subnetName'))]"
+                            }
+                        }
+                    }
+                ]
+            }
+        },
+        {
+            "type": "Microsoft.Compute/virtualMachines",
+            "apiVersion": "2023-03-01",
+            "name": "[variables('vmName')]",
+            "location": "[resourceGroup().location]",
+            "dependsOn": [
+                "[resourceId('Microsoft.Network/networkInterfaces', variables('nicName'))]"
+            ],
+            "properties": {
+                "licenseType": "[if(parameters('useHybridBenefit'), 'Windows_Server', null())]",
+                "hardwareProfile": { "vmSize": "[parameters('vmSize')]" },
+                "osProfile": {
+                    "computerName": "[variables('computerName')]",
+                    "adminUsername": "[parameters('adminUsername')]",
+                    "adminPassword": "[parameters('adminPassword')]",
+                    "windowsConfiguration": { "provisionVMAgent": true, "enableAutomaticUpdates": true }
+                },
+                "storageProfile": {
+                    "imageReference": {
+                        "publisher": "MicrosoftWindowsServer",
+                        "offer": "WindowsServer",
+                        "sku": "2022-datacenter-g2",
+                        "version": "latest"
+                    },
+                    "osDisk": {
+                        "name": "[variables('osDiskName')]",
+                        "createOption": "FromImage",
+                        "caching": "ReadWrite",
+                        "diskSizeGB": "[parameters('osDiskSizeGB')]",
+                        "managedDisk": { "storageAccountType": "[parameters('osDiskType')]" }
+                    }
+                },
+                "networkProfile": {
+                    "networkInterfaces": [
+                        { "id": "[resourceId('Microsoft.Network/networkInterfaces', variables('nicName'))]" }
+                    ]
+                }
+            }
+        },
+        {
+            "type": "Microsoft.Compute/virtualMachines/extensions",
+            "apiVersion": "2023-03-01",
+            "name": "[concat(variables('vmName'), '/initbuildagent')]",
+            "location": "[resourceGroup().location]",
+            "dependsOn": [
+                "[resourceId('Microsoft.Compute/virtualMachines', variables('vmName'))]"
+            ],
+            "properties": {
+                "publisher": "Microsoft.Compute",
+                "type": "CustomScriptExtension",
+                "typeHandlerVersion": "1.10",
+                "autoUpgradeMinorVersion": true,
+                "settings": {
+                    "fileUris": [ "[variables('initScriptUrl')]" ]
+                },
+                "protectedSettings": {
+                    "commandToExecute": "[variables('initCommand')]"
+                }
+            }
+        }
+    ],
+    "outputs": {
+        "fqdn": {
+            "type": "string",
+            "value": "[reference(resourceId('Microsoft.Network/publicIPAddresses', variables('publicIPAddressName'))).dnsSettings.fqdn]"
+        }
+    }
+}
