@@ -13,8 +13,8 @@
       - PowerShell 7 comes from Microsoft's own installer (install-powershell.ps1 -UseMSI). The
         Chocolatey 'pwsh' package loops forever in its process tree check when run as SYSTEM at
         startup, which blocks the whole setup.
-      - The .NET runtimes the AL tools need (8.0, 10.0) are installed explicitly; Chocolatey's
-        'dotnet' only brings the newest one.
+      - The .NET and ASP.NET Core runtimes the AL tools need (8.0, 10.0) are installed
+        explicitly; Chocolatey's 'dotnet' only brings the newest one.
       - Added: Node.js, Claude Code, BcContainerHelper, Python with the document libraries, jq,
         the AL Language extension, CLAUDE_CODE_GIT_BASH_PATH.
 #>
@@ -94,12 +94,17 @@ Invoke-Step '.NET SDK'                 { Install-ChocoPackage dotnet-sdk }
 Invoke-Step '.NET runtimes for AL tools' {
     $installer = Join-Path $SetupFolder 'dotnet-install.ps1'
     Invoke-WebRequest -UseBasicParsing -Uri 'https://dot.net/v1/dotnet-install.ps1' -OutFile $installer
+    # altool.exe needs both shared frameworks: Microsoft.NETCore.App and Microsoft.AspNetCore.App.
     foreach ($channel in $DotnetRuntimeChannels) {
-        & $installer -Channel $channel -Runtime dotnet -InstallDir 'C:\Program Files\dotnet' -NoPath
+        foreach ($runtime in 'dotnet', 'aspnetcore') {
+            & $installer -Channel $channel -Runtime $runtime -InstallDir 'C:\Program Files\dotnet' -NoPath
+        }
     }
     $runtimes = & 'C:\Program Files\dotnet\dotnet.exe' --list-runtimes
     foreach ($channel in $DotnetRuntimeChannels) {
-        if (-not ($runtimes -match "Microsoft\.NETCore\.App $([regex]::Escape($channel))\.")) { throw ".NET $channel runtime missing after the install" }
+        foreach ($framework in 'Microsoft.NETCore.App', 'Microsoft.AspNetCore.App') {
+            if (-not ($runtimes -match "$([regex]::Escape($framework)) $([regex]::Escape($channel))\.")) { throw "$framework $channel missing after the install" }
+        }
     }
 }
 Invoke-Step 'Node.js LTS'              { Install-ChocoPackage nodejs-lts }

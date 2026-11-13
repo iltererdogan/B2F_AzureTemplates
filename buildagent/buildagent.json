@@ -80,7 +80,7 @@
         },
         "scriptsBaseUrl": {
             "type": "string",
-            "defaultValue": "https://raw.githubusercontent.com/iltererdogan/B2F_AzureTemplates/buildagent-v3/",
+            "defaultValue": "https://raw.githubusercontent.com/iltererdogan/B2F_AzureTemplates/buildagent-v4/",
             "metadata": { "description": "Base URL the setup scripts are downloaded from, ending with /. Points to a release tag so a deployment never picks up unfinished changes." }
         }
     },
