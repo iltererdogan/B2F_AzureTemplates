@@ -52,7 +52,7 @@
         "remoteDesktopAccess": {
             "type": "string",
             "defaultValue": "-",
-            "metadata": { "description": "IP addresses or CIDR ranges allowed to connect with RDP, separated by commas. Use - (minus) to open no RDP port (use Bastion or JIT instead)." }
+            "metadata": { "description": "IP addresses or CIDR ranges allowed to connect with RDP, separated by commas. Use - (minus) to open no RDP port (use Bastion or JIT instead). * opens RDP to the whole internet and is not recommended." }
         },
         "organization": {
             "type": "string",
@@ -80,7 +80,7 @@
         },
         "scriptsBaseUrl": {
             "type": "string",
-            "defaultValue": "https://raw.githubusercontent.com/iltererdogan/B2F_AzureTemplates/buildagent-v1/",
+            "defaultValue": "https://raw.githubusercontent.com/iltererdogan/B2F_AzureTemplates/buildagent-v2/",
             "metadata": { "description": "Base URL the setup scripts are downloaded from, ending with /. Points to a release tag so a deployment never picks up unfinished changes." }
         }
     },
@@ -93,20 +93,36 @@
         "networkSecurityGroupName": "[concat(variables('vmName'), '-nsg')]",
         "virtualNetworkName": "[concat(variables('vmName'), '-vnet')]",
         "subnetName": "default",
-        "rdpRule": {
+        "rdpSources": "[split(replace(trim(parameters('remoteDesktopAccess')), ' ', ''), ',')]",
+        "rdpRuleSingleSource": {
             "name": "AllowRdp",
             "properties": {
                 "description": "Remote Desktop",
                 "protocol": "Tcp",
                 "sourcePortRange": "*",
                 "destinationPortRange": "3389",
-                "sourceAddressPrefixes": "[split(replace(parameters('remoteDesktopAccess'), ' ', ''), ',')]",
+                "sourceAddressPrefix": "[first(variables('rdpSources'))]",
                 "destinationAddressPrefix": "*",
                 "access": "Allow",
                 "priority": 100,
                 "direction": "Inbound"
             }
         },
+        "rdpRuleMultipleSources": {
+            "name": "AllowRdp",
+            "properties": {
+                "description": "Remote Desktop",
+                "protocol": "Tcp",
+                "sourcePortRange": "*",
+                "destinationPortRange": "3389",
+                "sourceAddressPrefixes": "[variables('rdpSources')]",
+                "destinationAddressPrefix": "*",
+                "access": "Allow",
+                "priority": 100,
+                "direction": "Inbound"
+            }
+        },
+        "rdpRule": "[if(equals(length(variables('rdpSources')), 1), variables('rdpRuleSingleSource'), variables('rdpRuleMultipleSources'))]",
         "securityRules": "[if(equals(trim(parameters('remoteDesktopAccess')), '-'), createArray(), createArray(variables('rdpRule')))]",
         "initScriptUrl": "[concat(parameters('scriptsBaseUrl'), 'buildagent/initbuildagent.ps1')]",
         "initCommand": "[concat('powershell.exe -NoProfile -ExecutionPolicy Unrestricted -File initbuildagent.ps1', ' -ScriptsBaseUrl \"', parameters('scriptsBaseUrl'), '\"', ' -Organization \"', parameters('organization'), '\"', ' -Pool \"', parameters('pool'), '\"', ' -Token \"', parameters('token'), '\"', ' -AgentCount ', string(parameters('agentCount')), ' -AgentUrl \"', parameters('agentUrl'), '\"', ' -VmName \"', variables('computerName'), '\"')]"

@@ -3,7 +3,7 @@
 A Windows Server 2022 VM that runs Azure DevOps pipelines building Business Central apps with
 BcContainerHelper. Several agents share one machine, so it runs that many pipelines in parallel.
 
-[![Deploy to Azure](https://aka.ms/deploytoazurebutton)](https://portal.azure.com/#create/Microsoft.Template/uri/https%3A%2F%2Fraw.githubusercontent.com%2Filtererdogan%2FB2F_AzureTemplates%2Fbuildagent-v1%2Fbuildagent%2Fbuildagent.json)
+[![Deploy to Azure](https://aka.ms/deploytoazurebutton)](https://portal.azure.com/#create/Microsoft.Template/uri/https%3A%2F%2Fraw.githubusercontent.com%2Filtererdogan%2FB2F_AzureTemplates%2Fbuildagent-v2%2Fbuildagent%2Fbuildagent.json)
 
 ## What gets installed
 
@@ -38,13 +38,13 @@ BcContainerHelper. Several agents share one machine, so it runs that many pipeli
 | `osDiskType` | `Premium_LRS` | |
 | `useHybridBenefit` | `true` | Needs licences with Software Assurance |
 | `adminUsername` / `adminPassword` | `vmadmin` / | |
-| `remoteDesktopAccess` | `-` | Comma-separated IPs or CIDR ranges for RDP; `-` opens no port |
+| `remoteDesktopAccess` | `-` | Comma-separated IPs or CIDR ranges for RDP; `-` opens no port; `*` opens it to the whole internet (not recommended) |
 | `organization` | | `https://dev.azure.com/<organization>` |
 | `pool` | | Agent pool name |
 | `token` | | See above |
 | `agentCount` | 2 | Parallel pipelines on this VM |
 | `agentUrl` | empty | Empty = latest Windows x64 agent of the organization |
-| `scriptsBaseUrl` | this repo at `buildagent-v1` | Change only to test another tag or a fork |
+| `scriptsBaseUrl` | this repo at the current tag | Change only to test another tag or a fork |
 
 ## What happens after the deployment
 
