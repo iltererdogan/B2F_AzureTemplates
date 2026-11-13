@@ -13,6 +13,8 @@
       - PowerShell 7 comes from Microsoft's own installer (install-powershell.ps1 -UseMSI). The
         Chocolatey 'pwsh' package loops forever in its process tree check when run as SYSTEM at
         startup, which blocks the whole setup.
+      - The .NET runtimes the AL tools need (8.0, 10.0) are installed explicitly; Chocolatey's
+        'dotnet' only brings the newest one.
       - Added: Node.js, Claude Code, BcContainerHelper, Python with the document libraries, jq,
         the AL Language extension, CLAUDE_CODE_GIT_BASH_PATH.
 #>
@@ -23,6 +25,10 @@ $SetupFolder = 'C:\B2FSetup'
 $summaryFile = Join-Path $SetupFolder 'tools-summary.txt'
 $choco       = 'C:\ProgramData\chocolatey\bin\choco.exe'
 $npmPrefix   = 'C:\ProgramData\npm-global'
+
+# .NET runtimes the AL compiler and altool.exe of the supported AL Language versions run on.
+# Add a channel here when a new AL Language version moves to a new .NET major version.
+$DotnetRuntimeChannels = @('8.0', '10.0')
 $results     = [System.Collections.Generic.List[string]]::new()
 
 function Update-SessionPath {
@@ -82,6 +88,20 @@ Invoke-Step 'GitHub CLI'               { Install-ChocoPackage gh }
 Invoke-Step 'Visual C++ Redistributable' { Install-ChocoPackage vcredist140 }
 Invoke-Step '.NET runtime'             { Install-ChocoPackage dotnet }
 Invoke-Step '.NET SDK'                 { Install-ChocoPackage dotnet-sdk }
+
+# The 'dotnet' package above installs only the newest runtime, and .NET does not roll forward to a
+# newer major version: the AL tools need their own (altool.exe of AL 18 needs exactly 10.0).
+Invoke-Step '.NET runtimes for AL tools' {
+    $installer = Join-Path $SetupFolder 'dotnet-install.ps1'
+    Invoke-WebRequest -UseBasicParsing -Uri 'https://dot.net/v1/dotnet-install.ps1' -OutFile $installer
+    foreach ($channel in $DotnetRuntimeChannels) {
+        & $installer -Channel $channel -Runtime dotnet -InstallDir 'C:\Program Files\dotnet' -NoPath
+    }
+    $runtimes = & 'C:\Program Files\dotnet\dotnet.exe' --list-runtimes
+    foreach ($channel in $DotnetRuntimeChannels) {
+        if (-not ($runtimes -match "Microsoft\.NETCore\.App $([regex]::Escape($channel))\.")) { throw ".NET $channel runtime missing after the install" }
+    }
+}
 Invoke-Step 'Node.js LTS'              { Install-ChocoPackage nodejs-lts }
 Invoke-Step 'Python 3.12'              { Install-ChocoPackage python312 }
 Invoke-Step 'jq'                       { Install-ChocoPackage jq }

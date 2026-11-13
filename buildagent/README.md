@@ -3,7 +3,7 @@
 A Windows Server 2022 VM that runs Azure DevOps pipelines building Business Central apps with
 BcContainerHelper. Several agents share one machine, so it runs that many pipelines in parallel.
 
-[![Deploy to Azure](https://aka.ms/deploytoazurebutton)](https://portal.azure.com/#create/Microsoft.Template/uri/https%3A%2F%2Fraw.githubusercontent.com%2Filtererdogan%2FB2F_AzureTemplates%2Fbuildagent-v2%2Fbuildagent%2Fbuildagent.json)
+[![Deploy to Azure](https://aka.ms/deploytoazurebutton)](https://portal.azure.com/#create/Microsoft.Template/uri/https%3A%2F%2Fraw.githubusercontent.com%2Filtererdogan%2FB2F_AzureTemplates%2Fbuildagent-v3%2Fbuildagent%2Fbuildagent.json)
 
 ## What gets installed
 
@@ -11,7 +11,7 @@ BcContainerHelper. Several agents share one machine, so it runs that many pipeli
 |---|---|
 | Containers | Windows Containers feature, Docker Engine (data root `C:\d`, process isolation) |
 | PowerShell | PowerShell 7, Az module, BcContainerHelper module |
-| Build tools | Git, .NET runtime and SDK, Visual C++ Redistributable, 7-Zip, GitHub CLI, jq |
+| Build tools | Git, .NET runtime and SDK (latest), .NET 8.0 and 10.0 runtimes for the AL tools, Visual C++ Redistributable, 7-Zip, GitHub CLI, jq |
 | Editors | Visual Studio Code with the AL Language extension, Microsoft Edge |
 | AI worker | Node.js LTS, Claude Code (`C:\ProgramData\npm-global`), Python 3.12 with python-docx, openpyxl, lxml, pypdf; `CLAUDE_CODE_GIT_BASH_PATH` |
 | Agents | Latest Azure DevOps agent, `agentCount` times, as services running as SYSTEM |
